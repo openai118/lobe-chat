@@ -1,17 +1,20 @@
+import { isDeprecatedEdition, isDesktop, isUsePgliteDB } from '@lobechat/const';
+import { getModelPropertyWithFallback } from '@lobechat/model-runtime';
 import { uniqBy } from 'lodash-es';
-import { SWRResponse, mutate } from 'swr';
-import { StateCreator } from 'zustand/vanilla';
-
-import { isDeprecatedEdition, isDesktop, isUsePgliteDB } from '@/const/version';
-import { useClientDataSWR } from '@/libs/swr';
-import { aiProviderService } from '@/services/aiProvider';
-import { AiInfraStore } from '@/store/aiInfra/store';
 import {
   AIImageModelCard,
   EnabledAiModel,
   LobeDefaultAiModelListItem,
   ModelAbilities,
-} from '@/types/aiModel';
+} from 'model-bank';
+import { SWRResponse, mutate } from 'swr';
+import { StateCreator } from 'zustand/vanilla';
+
+import { useClientDataSWR } from '@/libs/swr';
+import { aiProviderService } from '@/services/aiProvider';
+import { AiInfraStore } from '@/store/aiInfra/store';
+import { useUserStore } from '@/store/user';
+import { authSelectors } from '@/store/user/selectors';
 import {
   AiProviderDetailItem,
   AiProviderListItem,
@@ -24,7 +27,6 @@ import {
   UpdateAiProviderConfigParams,
   UpdateAiProviderParams,
 } from '@/types/aiProvider';
-import { getModelPropertyWithFallback } from '@/utils/getFallbackModelProperty';
 
 /**
  * Get models by provider ID and type, with proper formatting and deduplication
@@ -99,7 +101,10 @@ export interface AiProviderAction {
   updateAiProviderSort: (items: AiProviderSortMap[]) => Promise<void>;
 
   useFetchAiProviderItem: (id: string) => SWRResponse<AiProviderDetailItem | undefined>;
-  useFetchAiProviderList: (params?: { suspense?: boolean }) => SWRResponse<AiProviderListItem[]>;
+  useFetchAiProviderList: (params?: {
+    enabled?: boolean;
+    suspense?: boolean;
+  }) => SWRResponse<AiProviderListItem[]>;
   /**
    * fetch provider keyVaults and user enabled model list
    * @param isLoginOnInit
@@ -158,7 +163,10 @@ export const createAiProviderSlice: StateCreator<
     await get().refreshAiProviderRuntimeState();
   },
   refreshAiProviderRuntimeState: async () => {
-    await mutate([AiProviderSwrKey.fetchAiProviderRuntimeState, true]);
+    await Promise.all([
+      mutate([AiProviderSwrKey.fetchAiProviderRuntimeState, true]),
+      mutate([AiProviderSwrKey.fetchAiProviderRuntimeState, false]),
+    ]);
   },
   removeAiProvider: async (id) => {
     await aiProviderService.deleteAiProvider(id);
@@ -206,9 +214,9 @@ export const createAiProviderSlice: StateCreator<
         },
       },
     ),
-  useFetchAiProviderList: () =>
+  useFetchAiProviderList: (opts) =>
     useClientDataSWR<AiProviderListItem[]>(
-      AiProviderSwrKey.fetchAiProviderList,
+      opts?.enabled === false ? null : AiProviderSwrKey.fetchAiProviderList,
       () => aiProviderService.getAiProviderList(),
       {
         fallbackData: [],
@@ -227,12 +235,17 @@ export const createAiProviderSlice: StateCreator<
       },
     ),
 
-  useFetchAiProviderRuntimeState: (isLogin) =>
-    useClientDataSWR<AiProviderRuntimeStateWithBuiltinModels | undefined>(
-      !isDeprecatedEdition ? [AiProviderSwrKey.fetchAiProviderRuntimeState, isLogin] : null,
+  useFetchAiProviderRuntimeState: (isLogin) => {
+    const isAuthLoaded = authSelectors.isLoaded(useUserStore.getState());
+    // Only fetch when auth is loaded and login status is explicitly defined (true or false)
+    // Prevents unnecessary requests when login state is null/undefined
+    const shouldFetch =
+      isAuthLoaded && !isDeprecatedEdition && isLogin !== null && isLogin !== undefined;
+    return useClientDataSWR<AiProviderRuntimeStateWithBuiltinModels | undefined>(
+      shouldFetch ? [AiProviderSwrKey.fetchAiProviderRuntimeState, isLogin] : null,
       async ([, isLogin]) => {
         const [{ LOBE_DEFAULT_MODEL_LIST: builtinAiModelList }, { DEFAULT_MODEL_PROVIDER_LIST }] =
-          await Promise.all([import('@/config/aiModels'), import('@/config/modelProviders')]);
+          await Promise.all([import('model-bank'), import('@/config/modelProviders')]);
 
         if (isLogin) {
           const data = await aiProviderService.getAiProviderRuntimeState();
@@ -300,11 +313,13 @@ export const createAiProviderSlice: StateCreator<
               enabledAiProviders: data.enabledAiProviders,
               enabledChatModelList: data.enabledChatModelList || [],
               enabledImageModelList: data.enabledImageModelList || [],
+              isInitAiProviderRuntimeState: true,
             },
             false,
             'useFetchAiProviderRuntimeState',
           );
         },
       },
-    ),
+    );
+  },
 });

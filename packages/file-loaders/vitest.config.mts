@@ -2,13 +2,17 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
-    // coverage: {
-    //   all: false,
-    //   provider: 'v8',
-    //   reporter: ['text', 'json', 'lcov', 'text-summary'],
-    //   reportsDirectory: './coverage/app',
-    // },
+    coverage: {
+      exclude: [
+        '**/types.ts',
+        '**/types/**',
+        '**/*.d.ts',
+        '**/test/setup.ts',
+        '**/vitest.config.*',
+        '**/node_modules/**',
+      ],
+      reporter: ['text', 'json', 'lcov', 'text-summary'],
+    },
     environment: 'happy-dom',
-    // setupFiles: join(__dirname, './test/setup.ts'),
   },
 });

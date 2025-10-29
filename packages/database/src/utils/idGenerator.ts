@@ -7,12 +7,15 @@ export const createNanoId = (size = 8) =>
 
 const prefixes = {
   agents: 'agt',
+  chatGroups: 'cg',
   documents: 'docs',
   files: 'file',
   generationBatches: 'gb',
   generationTopics: 'gt',
   generations: 'gen',
   knowledgeBases: 'kb',
+  memory: 'mem',
+  messageGroups: 'mg',
   messages: 'msg',
   plugins: 'plg',
   sessionGroups: 'sg',
